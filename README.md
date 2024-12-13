@@ -22,36 +22,49 @@ A Python-based LED controller system using USB serial communication between a PC
    modules-load=dwc2,g_serial
    ```
 
-3. Load the required modules immediately (or reboot):
+3. Configure automatic login for serial console:
+   ```bash
+   sudo mkdir -p /etc/systemd/system/serial-getty@ttyGS0.service.d/
+   sudo nano /etc/systemd/system/serial-getty@ttyGS0.service.d/autologin.conf
+   ```
+   Add these lines to autologin.conf:
+   ```
+   [Service]
+   ExecStart=
+   ExecStart=-/sbin/agetty -o '-p -f -- \\u' --noclear --autologin dan %I $TERM
+   ```
+
+4. Load the required modules immediately (or reboot):
    ```bash
    sudo modprobe dwc2
    sudo modprobe g_serial
    ```
 
-4. Add modules to load at boot:
+5. Add modules to load at boot:
    ```bash
    echo "dwc2" | sudo tee -a /etc/modules
    echo "g_serial" | sudo tee -a /etc/modules
    ```
 
-5. Give permissions to the serial device:
+6. Give permissions to the serial device:
    ```bash
    sudo chmod 666 /dev/ttyGS0
    ```
 
-6. Make permissions persistent by creating a udev rule:
+7. Make permissions persistent by creating a udev rule:
    ```bash
    echo 'KERNEL=="ttyGS0", MODE="0666"' | sudo tee /etc/udev/rules.d/99-serial.rules
    ```
 
-7. Reboot the Raspberry Pi:
+8. Reboot the Raspberry Pi:
    ```bash
    sudo reboot
    ```
 
-8. After reboot, verify the USB serial device is created:
+9. After reboot, verify:
    ```bash
-   ls -l /dev/ttyGS0
+   ls -l /dev/ttyGS0  # Check device exists
+   # Connect with PuTTY or screen - should auto-login without password prompt
    ```
 
 ### PC Setup
