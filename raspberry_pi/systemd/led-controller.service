@@ -1,0 +1,16 @@
+[Unit]
+Description=LED Controller Service
+After=network.target
+
+[Service]
+ExecStart=/home/dan/led_env/bin/python /home/dan/led_env/led_controller.py
+WorkingDirectory=/home/dan/led_env
+User=root
+Group=root
+Environment=PATH=/home/dan/led_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/home/dan/led_env/lib/python3.9/site-packages
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

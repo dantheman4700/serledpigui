@@ -1,0 +1,2 @@
+rpi_ws281x>=4.3.4  # For LED strip control
+pyserial>=3.5 
