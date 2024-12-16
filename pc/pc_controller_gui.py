@@ -66,6 +66,7 @@ class LEDGUI:
                                          state='readonly', width=10)
         self.strip_dropdown['values'] = ['All Strips']
         self.strip_dropdown.grid(row=0, column=1, columnspan=2, padx=2)
+        self.strip_dropdown.bind('<<ComboboxSelected>>', self.on_strip_selected)
         
         # RGB controls
         self.r_var = tk.StringVar(value="0")
@@ -108,6 +109,50 @@ class LEDGUI:
         self.off_btn = ttk.Button(self.led_frame, text="Turn Off", 
                                  command=self.turn_off, state='disabled')
         self.off_btn.grid(row=3, column=4, columnspan=3, padx=5, pady=5)
+        
+        # Group Control Frame
+        self.group_frame = ttk.LabelFrame(self.main_frame, text="Group Controls", padding="5")
+        self.group_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        # Grouping selection
+        ttk.Label(self.group_frame, text="Grouping:").grid(row=0, column=0, padx=2)
+        self.grouping_var = tk.StringVar()
+        self.grouping_dropdown = ttk.Combobox(self.group_frame, textvariable=self.grouping_var, 
+                                            state='readonly', width=15)
+        self.grouping_dropdown.grid(row=0, column=1, columnspan=2, padx=2)
+        self.grouping_dropdown.bind('<<ComboboxSelected>>', self.update_group_dropdown)
+        
+        # Group selection
+        ttk.Label(self.group_frame, text="Group:").grid(row=0, column=3, padx=2)
+        self.group_var = tk.StringVar()
+        self.group_dropdown = ttk.Combobox(self.group_frame, textvariable=self.group_var, 
+                                         state='readonly', width=15)
+        self.group_dropdown.grid(row=0, column=4, columnspan=2, padx=2)
+        
+        # RGB controls for group
+        self.group_r_var = tk.StringVar(value="0")
+        self.group_g_var = tk.StringVar(value="0")
+        self.group_b_var = tk.StringVar(value="0")
+        
+        ttk.Label(self.group_frame, text="R:").grid(row=1, column=0, padx=2)
+        self.group_r_entry = ttk.Entry(self.group_frame, width=5, textvariable=self.group_r_var)
+        self.group_r_entry.grid(row=1, column=1, padx=2)
+        
+        ttk.Label(self.group_frame, text="G:").grid(row=1, column=2, padx=2)
+        self.group_g_entry = ttk.Entry(self.group_frame, width=5, textvariable=self.group_g_var)
+        self.group_g_entry.grid(row=1, column=3, padx=2)
+        
+        ttk.Label(self.group_frame, text="B:").grid(row=1, column=4, padx=2)
+        self.group_b_entry = ttk.Entry(self.group_frame, width=5, textvariable=self.group_b_var)
+        self.group_b_entry.grid(row=1, column=5, padx=2)
+        
+        # Group color button
+        self.group_color_btn = ttk.Button(self.group_frame, text="Set Group Color", 
+                                        command=self.set_group_color, state='disabled')
+        self.group_color_btn.grid(row=1, column=6, padx=5)
+        
+        # Disable group controls initially
+        self.disable_group_controls()
 
     def refresh_ports(self):
         """Refresh the list of available COM ports."""
@@ -152,8 +197,11 @@ class LEDGUI:
                     if self.client.last_mode == "LED":
                         self.update_strip_dropdown()  # Update strip options
                         self.enable_led_controls()
+                        self.enable_group_controls()  # Enable group controls too
+                        self.update_grouping_dropdown()  # Initialize grouping options
                     else:
                         self.disable_led_controls()
+                        self.disable_group_controls()
                     
                 else:
                     print("Connection failed!")
@@ -172,6 +220,7 @@ class LEDGUI:
             self.port_dropdown['state'] = 'normal'
             self.update_status(connected=False, mode="Unknown")
             self.disable_led_controls()
+            self.disable_group_controls()
 
     def test_connection(self):
         """Test connection and update status."""
@@ -326,6 +375,107 @@ class LEDGUI:
                         break
                 else:
                     self.strip_var.set('All Strips')
+
+    def update_grouping_dropdown(self):
+        """Update grouping dropdown based on selected strip."""
+        strip_name = self.strip_var.get()
+        if strip_name == 'All Strips':
+            return
+        
+        strip_id = self.strip_name_to_id.get(strip_name)
+        
+        if strip_id and self.client.config:
+            groups = self.client.get_available_groups(strip_id)
+            if groups:
+                self.grouping_dropdown['values'] = [g['name'] for g in groups]
+                self.grouping_var.set(groups[0]['name'])
+                self.update_group_dropdown()
+            else:
+                print(f"No groups found for strip {strip_name}")
+                self.grouping_dropdown['values'] = []
+                self.grouping_var.set('')
+                self.group_dropdown['values'] = []
+                self.group_var.set('')
+
+    def update_group_dropdown(self, event=None):
+        """Update group dropdown based on selected grouping."""
+        strip_name = self.strip_var.get()
+        strip_id = self.strip_name_to_id.get(strip_name)
+        grouping_name = self.grouping_var.get()
+        
+        if strip_id and grouping_name and self.client.config:
+            groups = self.client.get_available_groups(strip_id)
+            grouping = next((g for g in groups if g['name'] == grouping_name), None)
+            if grouping:
+                self.group_dropdown['values'] = [f"{g['id']}: {g['name']}" for g in grouping['groups']]
+                if grouping['groups']:
+                    self.group_var.set(f"{grouping['groups'][0]['id']}: {grouping['groups'][0]['name']}")
+
+    def enable_group_controls(self):
+        """Enable group control widgets."""
+        for widget in [self.grouping_dropdown, self.group_dropdown, 
+                      self.group_r_entry, self.group_g_entry, self.group_b_entry,
+                      self.group_color_btn]:
+            if widget in [self.grouping_dropdown, self.group_dropdown]:
+                widget['state'] = 'readonly'
+            else:
+                widget['state'] = 'normal'
+
+    def disable_group_controls(self):
+        """Disable group control widgets."""
+        for widget in [self.grouping_dropdown, self.group_dropdown, 
+                      self.group_r_entry, self.group_g_entry, self.group_b_entry,
+                      self.group_color_btn]:
+            widget['state'] = 'disabled'
+
+    def set_group_color(self):
+        """Set color for selected group."""
+        try:
+            strip_name = self.strip_var.get()
+            strip_id = self.strip_name_to_id.get(strip_name)
+            group_selection = self.group_var.get()
+            
+            if not group_selection:
+                return
+                
+            group_id = group_selection.split(':')[0]
+            grouping_name = self.grouping_var.get()
+            
+            # Get the LED list for this group
+            groups = self.client.get_available_groups(strip_id)
+            grouping = next((g for g in groups if g['name'] == grouping_name), None)
+            if not grouping:
+                return
+                
+            group = next((g for g in grouping['groups'] if str(g['id']) == group_id), None)
+            if not group:
+                return
+            
+            try:
+                r = int(self.group_r_var.get())
+                g = int(self.group_g_var.get())
+                b = int(self.group_b_var.get())
+                
+                if not all(0 <= x <= 255 for x in (r, g, b)):
+                    print("Color values must be between 0-255")
+                    return
+                    
+                response = self.client.set_group_color(strip_id, group['leds'], r, g, b)
+                print(f"Group color command response: {response}")
+                
+            except ValueError:
+                print("Invalid color values - must be integers between 0-255")
+                
+        except Exception as e:
+            print(f"Error setting group color: {e}")
+
+    def on_strip_selected(self, event=None):
+        """Handle strip selection."""
+        if self.strip_var.get() == 'All Strips':
+            self.disable_group_controls()
+        else:
+            self.enable_group_controls()
+            self.update_grouping_dropdown()
 
 def main():
     root = tk.Tk()

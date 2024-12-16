@@ -40,35 +40,7 @@ class LEDServer:
                 return json.load(f)
         except Exception as e:
             print(f"Error loading config: {e}")
-            # Return default config if file not found or invalid
-            return {
-                "strips": [
-                    {
-                        "id": 1,
-                        "name": "Main Strip",
-                        "count": 96,
-                        "pin": 18,
-                        "freq_hz": 800000,
-                        "dma": 10,
-                        "brightness": 128,
-                        "invert": False,
-                        "channel": 0,
-                        "type": "WS2811_STRIP_GRB"
-                    },
-                    {
-                        "id": 2,
-                        "name": "Honeycomb",
-                        "count": 50,
-                        "pin": 13,
-                        "freq_hz": 800000,
-                        "dma": 5,
-                        "brightness": 128,
-                        "invert": False,
-                        "channel": 1,
-                        "type": "WS2811_STRIP_GRB"
-                    }
-                ]
-            }
+            raise  # Re-raise the exception instead of returning a default config
 
     def update_strip(self, strip, color=None, brightness=None):
         """Update a single strip with new color or brightness."""
@@ -81,6 +53,19 @@ class LEDServer:
                 
         strip.show()
         
+    def set_group_color(self, strip, leds, color):
+        """Set color for a specific group of LEDs.
+        
+        Args:
+            strip: The LED strip object
+            leds: List of LED indices to update
+            color: Color to set the LEDs to
+        """
+        for led in leds:
+            strip.setPixelColor(led, color)
+        strip.show()
+        return True
+
     def handle_led_command(self, command, params=None):
         """Handle LED control commands."""
         try:
@@ -159,6 +144,28 @@ class LEDServer:
                 for strip in self.strips.values():
                     self.update_strip(strip, color=Color(0, 0, 0))
                 return "OK:TEST_COMPLETE"
+                
+            elif command == "GROUP_COLOR":
+                # Format: GROUP_COLOR:strip_id:led1,led2,led3...:r,g,b
+                if not params or len(params) < 3:
+                    return "ERROR:GROUP_COLOR_REQUIRES_STRIP_LEDS_AND_RGB"
+                try:
+                    strip_id = params[0]
+                    leds = [int(x) for x in params[1].split(',')]
+                    r, g, b = map(int, params[2].split(','))
+                    
+                    if not all(0 <= x <= 255 for x in (r, g, b)):
+                        return "ERROR:COLOR_VALUES_MUST_BE_0_TO_255"
+                    
+                    if strip_id not in self.strips:
+                        return "ERROR:INVALID_STRIP_ID"
+                    
+                    color = Color(r, g, b)
+                    self.set_group_color(self.strips[strip_id], leds, color)
+                    return "OK:GROUP_COLOR_SET"
+                        
+                except ValueError:
+                    return "ERROR:INVALID_PARAMETERS"
                 
             return "ERROR:UNKNOWN_COMMAND"
             

@@ -327,6 +327,41 @@ class LEDClient:
         if self.ssh:
             self.ssh.close()
 
+    def set_active_grouping(self, strip_id, grouping_id):
+        """Set active grouping for a strip."""
+        return self.send_command(f"SET_GROUPING:{strip_id}:{grouping_id}")
+
+    def set_group_color(self, strip_id, leds, r, g, b):
+        """Set color for a specific group of LEDs.
+        
+        Args:
+            strip_id: ID of the LED strip
+            leds: List of LED indices to update
+            r, g, b: RGB color values (0-255)
+        """
+        if not all(0 <= x <= 255 for x in (r, g, b)):
+            return "Error: Color values must be between 0-255"
+        led_list = ','.join(str(x) for x in leds)
+        return self.send_command(f"GROUP_COLOR:{strip_id}:{led_list}:{r},{g},{b}")
+
+    def get_available_groups(self, strip_id):
+        """Get available groups for a strip from the config.
+        
+        Args:
+            strip_id: ID of the LED strip
+            
+        Returns:
+            List of groups from the config, or None if strip not found
+        """
+        if not self.config:
+            return None
+            
+        strip = next((s for s in self.config['strips'] if str(s['id']) == str(strip_id)), None)
+        if not strip:
+            return None
+            
+        return strip.get('group_sets', [])
+
 def main():
     client = LEDClient()
     
@@ -345,10 +380,11 @@ def main():
             print("6. Turn Off LEDs")
             print("7. Show LED Configuration")
             print("8. Test Connection")
-            print("9. Exit")
+            print("9. Set Group Color")
+            print("10. Exit")
             
             try:
-                choice = input("\nEnter choice (1-9): ")
+                choice = input("\nEnter choice (1-10): ")
                 
                 if choice == '1':
                     if not client.config:
@@ -421,6 +457,57 @@ def main():
                         print(f"Connection test failed - {mode}")
                     
                 elif choice == '9':
+                    if not client.config:
+                        print("No LED configuration available!")
+                        continue
+                        
+                    # Show available strips
+                    print("\nAvailable strips:")
+                    for strip in client.config['strips']:
+                        print(f"{strip['id']}: {strip['name']}")
+                    
+                    strip_id = input("Enter strip ID: ")
+                    
+                    # Show available groupings for the strip
+                    groups = client.get_available_groups(strip_id)
+                    if not groups:
+                        print("No groupings available for this strip!")
+                        continue
+                        
+                    # Show groupings and let user select one
+                    print("\nAvailable groupings:")
+                    for i, grouping in enumerate(groups, 1):
+                        print(f"{i}. {grouping['name']}")
+                    
+                    grouping_index = int(input("\nSelect grouping number: ")) - 1
+                    if not 0 <= grouping_index < len(groups):
+                        print("Invalid grouping selection!")
+                        continue
+                    
+                    selected_grouping = groups[grouping_index]
+                    
+                    # Show groups in selected grouping
+                    print(f"\nGroups in {selected_grouping['name']}:")
+                    for group in selected_grouping['groups']:
+                        print(f"  {group['id']}: {group['name']}")
+                    
+                    group_id = input("\nSelect group ID: ")
+                    
+                    # Find selected group
+                    selected_group = next((g for g in selected_grouping['groups'] if str(g['id']) == group_id), None)
+                    if not selected_group:
+                        print("Invalid group ID!")
+                        continue
+                    
+                    # Get color
+                    r = int(input("Enter red (0-255): "))
+                    g = int(input("Enter green (0-255): "))
+                    b = int(input("Enter blue (0-255): "))
+                    
+                    response = client.set_group_color(strip_id, selected_group['leds'], r, g, b)
+                    print(f"Response: {response}")
+                    
+                elif choice == '10':
                     print("Exiting...")
                     client.disconnect()
                     break
