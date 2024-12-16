@@ -1,0 +1,28 @@
+{
+    "strips": [
+        {
+            "id": 1,
+            "name": "Main Strip",
+            "count": 96,
+            "pin": 18,
+            "freq_hz": 800000,
+            "dma": 10,
+            "brightness": 128,
+            "invert": false,
+            "channel": 0,
+            "type": "WS2811_STRIP_GRB"
+        },
+        {
+            "id": 2,
+            "name": "Honeycomb",
+            "count": 50,
+            "pin": 13,
+            "freq_hz": 800000,
+            "dma": 5,
+            "brightness": 128,
+            "invert": false,
+            "channel": 1,
+            "type": "WS2811_STRIP_GRB"
+        }
+    ]
+}

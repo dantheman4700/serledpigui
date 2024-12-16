@@ -1,41 +1,75 @@
 import time
 import serial
+import json
+import os
 from rpi_ws281x import ws, Color, Adafruit_NeoPixel
-
-# LED strip configuration
-LED_1_COUNT = 96
-LED_1_PIN = 18
-LED_1_FREQ_HZ = 800000
-LED_1_DMA = 10
-LED_1_BRIGHTNESS = 128
-LED_1_INVERT = False
-LED_1_CHANNEL = 0
-LED_1_STRIP = ws.WS2811_STRIP_GRB
-
-LED_2_COUNT = 50
-LED_2_PIN = 13
-LED_2_FREQ_HZ = 800000
-LED_2_DMA = 5
-LED_2_BRIGHTNESS = 128
-LED_2_INVERT = False
-LED_2_CHANNEL = 1
-LED_2_STRIP = ws.WS2811_STRIP_GRB
 
 class LEDServer:
     def __init__(self):
-        # Initialize LED strips
-        self.strip1 = Adafruit_NeoPixel(LED_1_COUNT, LED_1_PIN, LED_1_FREQ_HZ,
-                                      LED_1_DMA, LED_1_INVERT, LED_1_BRIGHTNESS,
-                                      LED_1_CHANNEL, LED_1_STRIP)
+        # Load LED configuration
+        self.config = self.load_config()
         
-        self.strip2 = Adafruit_NeoPixel(LED_2_COUNT, LED_2_PIN, LED_2_FREQ_HZ,
-                                      LED_2_DMA, LED_2_INVERT, LED_2_BRIGHTNESS,
-                                      LED_2_CHANNEL, LED_2_STRIP)
+        # Initialize LED strips based on config
+        self.strips = {}
+        for strip_config in self.config['strips']:
+            strip_id = str(strip_config['id'])
+            # Get strip type from ws module
+            strip_type = getattr(ws, strip_config['type'])
+            
+            strip = Adafruit_NeoPixel(
+                strip_config['count'],
+                strip_config['pin'],
+                strip_config['freq_hz'],
+                strip_config['dma'],
+                strip_config['invert'],
+                strip_config['brightness'],
+                strip_config['channel'],
+                strip_type
+            )
+            self.strips[strip_id] = strip
         
         # Initialize serial connection
         self.serial = None
         self.running = False
         
+    def load_config(self):
+        """Load LED configuration from file."""
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), 'led_config.json')
+            with open(config_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            # Return default config if file not found or invalid
+            return {
+                "strips": [
+                    {
+                        "id": 1,
+                        "name": "Main Strip",
+                        "count": 96,
+                        "pin": 18,
+                        "freq_hz": 800000,
+                        "dma": 10,
+                        "brightness": 128,
+                        "invert": False,
+                        "channel": 0,
+                        "type": "WS2811_STRIP_GRB"
+                    },
+                    {
+                        "id": 2,
+                        "name": "Honeycomb",
+                        "count": 50,
+                        "pin": 13,
+                        "freq_hz": 800000,
+                        "dma": 5,
+                        "brightness": 128,
+                        "invert": False,
+                        "channel": 1,
+                        "type": "WS2811_STRIP_GRB"
+                    }
+                ]
+            }
+
     def update_strip(self, strip, color=None, brightness=None):
         """Update a single strip with new color or brightness."""
         if brightness is not None:
@@ -47,28 +81,14 @@ class LEDServer:
                 
         strip.show()
         
-    def update_both_strips(self, color=None, brightness=None):
-        """Update both strips atomically."""
-        if brightness is not None:
-            self.strip1.setBrightness(brightness)
-            self.strip2.setBrightness(brightness)
-            
-        if color is not None:
-            for i in range(max(self.strip1.numPixels(), self.strip2.numPixels())):
-                if i < self.strip1.numPixels():
-                    self.strip1.setPixelColor(i, color)
-                if i < self.strip2.numPixels():
-                    self.strip2.setPixelColor(i, color)
-                    
-        # Update both strips as close together as possible
-        self.strip1.show()
-        self.strip2.show()
-        
     def handle_led_command(self, command, params=None):
         """Handle LED control commands."""
         try:
             if command == "WHOAMI":
-                return "LED"  # Special identifier for LED mode
+                return "LED"
+            
+            elif command == "GET_CONFIG":
+                return f"CONFIG:{json.dumps(self.config)}"
             
             elif command == "EXIT":
                 print("Exit command received, shutting down...")
@@ -76,41 +96,68 @@ class LEDServer:
                 return "OK:EXITING"
             
             elif command == "COLOR":
-                if len(params) != 3:
-                    return "ERROR:COLOR_REQUIRES_3_VALUES"
+                # Parse COLOR:strip_id:r,g,b format
+                if not params or len(params) < 2:
+                    return "ERROR:COLOR_REQUIRES_STRIP_AND_RGB"
                 try:
-                    r, g, b = map(int, params)
+                    strip_id = params[0]
+                    r, g, b = map(int, params[1].split(','))
+                    
                     if not all(0 <= x <= 255 for x in (r, g, b)):
                         return "ERROR:COLOR_VALUES_MUST_BE_0_TO_255"
                     
-                    self.update_both_strips(color=Color(r, g, b))
+                    color = Color(r, g, b)
+                    if strip_id.upper() == "ALL":
+                        # Update all strips
+                        for strip in self.strips.values():
+                            self.update_strip(strip, color=color)
+                    elif strip_id in self.strips:
+                        self.update_strip(self.strips[strip_id], color=color)
+                    else:
+                        return "ERROR:INVALID_STRIP_ID"
+                    
                     return "OK:COLOR_SET"
                 except ValueError:
                     return "ERROR:COLOR_VALUES_MUST_BE_INTEGERS"
                 
             elif command == "BRIGHTNESS":
-                if len(params) != 1:
-                    return "ERROR:BRIGHTNESS_REQUIRES_1_VALUE"
+                # Parse BRIGHTNESS:strip_id:value format
+                if not params or len(params) < 2:
+                    return "ERROR:BRIGHTNESS_REQUIRES_STRIP_AND_VALUE"
                 try:
-                    brightness = int(params[0])
+                    strip_id = params[0]
+                    brightness = int(params[1])
                     if not 0 <= brightness <= 255:
                         return "ERROR:BRIGHTNESS_MUST_BE_0_TO_255"
                     
-                    self.update_both_strips(brightness=brightness)
+                    if strip_id.upper() == "ALL":
+                        # Update all strips
+                        for strip in self.strips.values():
+                            self.update_strip(strip, brightness=brightness)
+                    elif strip_id in self.strips:
+                        self.update_strip(self.strips[strip_id], brightness=brightness)
+                    else:
+                        return "ERROR:INVALID_STRIP_ID"
+                    
                     return "OK:BRIGHTNESS_SET"
                 except ValueError:
                     return "ERROR:BRIGHTNESS_MUST_BE_INTEGER"
                 
             elif command == "OFF":
-                self.update_both_strips(color=Color(0, 0, 0))
+                # Turn off all strips
+                for strip in self.strips.values():
+                    self.update_strip(strip, color=Color(0, 0, 0))
                 return "OK:LEDS_OFF"
                 
             elif command == "TEST":
                 # Simple test pattern - white flash
-                self.update_both_strips(color=Color(0, 0, 0))
-                self.update_both_strips(color=Color(255, 255, 255))
+                for strip in self.strips.values():
+                    self.update_strip(strip, color=Color(0, 0, 0))
+                for strip in self.strips.values():
+                    self.update_strip(strip, color=Color(255, 255, 255))
                 time.sleep(0.5)
-                self.update_both_strips(color=Color(0, 0, 0))
+                for strip in self.strips.values():
+                    self.update_strip(strip, color=Color(0, 0, 0))
                 return "OK:TEST_COMPLETE"
                 
             return "ERROR:UNKNOWN_COMMAND"
@@ -123,9 +170,11 @@ class LEDServer:
         try:
             # Initialize LED strips
             print("Initializing LED strips...")
-            self.strip1.begin()
-            self.strip2.begin()
-            self.update_both_strips(color=Color(0, 0, 0))
+            for strip in self.strips.values():
+                strip.begin()
+            # Turn off all strips
+            for strip in self.strips.values():
+                self.update_strip(strip, color=Color(0, 0, 0))
             
             # Initialize serial connection
             print("Opening serial port...")
@@ -164,13 +213,14 @@ class LEDServer:
                         
                         if command_line.upper() == 'EXIT':
                             print("Exit command received!")
-                            self.update_both_strips(color=Color(0, 0, 0))
+                            for strip in self.strips.values():
+                                self.update_strip(strip, color=Color(0, 0, 0))
                             break
                             
                         # Parse command and parameters
                         parts = command_line.split(':')
                         command = parts[0].upper()
-                        params = parts[1].split(',') if len(parts) > 1 else []
+                        params = parts[1:] if len(parts) > 1 else []
                         
                         print(f"Received command: {command} with params: {params}")
                         response = self.handle_led_command(command, params)
@@ -188,7 +238,9 @@ class LEDServer:
         """Clean shutdown of server."""
         print("\nShutting down LED Server...")
         self.running = False
-        self.update_both_strips(color=Color(0, 0, 0))
+        # Turn off all strips
+        for strip in self.strips.values():
+            self.update_strip(strip, color=Color(0, 0, 0))
         if self.serial and self.serial.is_open:
             self.serial.close()
             # Restart system console service

@@ -58,47 +58,56 @@ class LEDGUI:
         self.led_frame = ttk.LabelFrame(self.main_frame, text="LED Controls", padding="5")
         self.led_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
+        # Strip selection
+        ttk.Label(self.led_frame, text="Strip:").grid(row=0, column=0, padx=2)
+        self.strip_var = tk.StringVar(value="All Strips")
+        self.strip_name_to_id = {'All Strips': 'ALL'}
+        self.strip_dropdown = ttk.Combobox(self.led_frame, textvariable=self.strip_var, 
+                                         state='readonly', width=10)
+        self.strip_dropdown['values'] = ['All Strips']
+        self.strip_dropdown.grid(row=0, column=1, columnspan=2, padx=2)
+        
         # RGB controls
         self.r_var = tk.StringVar(value="0")
         self.g_var = tk.StringVar(value="0")
         self.b_var = tk.StringVar(value="0")
         
         # RGB entries
-        ttk.Label(self.led_frame, text="R:").grid(row=0, column=0, padx=2)
+        ttk.Label(self.led_frame, text="R:").grid(row=1, column=0, padx=2)
         self.r_entry = ttk.Entry(self.led_frame, width=5, textvariable=self.r_var)
-        self.r_entry.grid(row=0, column=1, padx=2)
+        self.r_entry.grid(row=1, column=1, padx=2)
         
-        ttk.Label(self.led_frame, text="G:").grid(row=0, column=2, padx=2)
+        ttk.Label(self.led_frame, text="G:").grid(row=1, column=2, padx=2)
         self.g_entry = ttk.Entry(self.led_frame, width=5, textvariable=self.g_var)
-        self.g_entry.grid(row=0, column=3, padx=2)
+        self.g_entry.grid(row=1, column=3, padx=2)
         
-        ttk.Label(self.led_frame, text="B:").grid(row=0, column=4, padx=2)
+        ttk.Label(self.led_frame, text="B:").grid(row=1, column=4, padx=2)
         self.b_entry = ttk.Entry(self.led_frame, width=5, textvariable=self.b_var)
-        self.b_entry.grid(row=0, column=5, padx=2)
+        self.b_entry.grid(row=1, column=5, padx=2)
         
         # Color button
         self.color_btn = ttk.Button(self.led_frame, text="Set Color", 
                                   command=self.set_color, state='disabled')
-        self.color_btn.grid(row=0, column=6, padx=5)
+        self.color_btn.grid(row=1, column=6, padx=5)
         
         # Brightness control
-        ttk.Label(self.led_frame, text="Brightness:").grid(row=1, column=0, columnspan=2, pady=5)
+        ttk.Label(self.led_frame, text="Brightness:").grid(row=2, column=0, columnspan=2, pady=5)
         self.brightness_var = tk.IntVar(value=128)
         self.brightness_scale = ttk.Scale(self.led_frame, from_=0, to=255, 
                                         orient=tk.HORIZONTAL, variable=self.brightness_var)
-        self.brightness_scale.grid(row=1, column=2, columnspan=4, sticky=(tk.W, tk.E), pady=5)
+        self.brightness_scale.grid(row=2, column=2, columnspan=4, sticky=(tk.W, tk.E), pady=5)
         self.brightness_btn = ttk.Button(self.led_frame, text="Set Brightness", 
                                        command=self.set_brightness, state='disabled')
-        self.brightness_btn.grid(row=1, column=6, pady=5)
+        self.brightness_btn.grid(row=2, column=6, pady=5)
         
         # Test and Off buttons
         self.test_pattern_btn = ttk.Button(self.led_frame, text="Test Pattern", 
                                          command=self.test_pattern, state='disabled')
-        self.test_pattern_btn.grid(row=2, column=0, columnspan=3, padx=5, pady=5)
+        self.test_pattern_btn.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
         
         self.off_btn = ttk.Button(self.led_frame, text="Turn Off", 
                                  command=self.turn_off, state='disabled')
-        self.off_btn.grid(row=2, column=4, columnspan=3, padx=5, pady=5)
+        self.off_btn.grid(row=3, column=4, columnspan=3, padx=5, pady=5)
 
     def refresh_ports(self):
         """Refresh the list of available COM ports."""
@@ -128,7 +137,7 @@ class LEDGUI:
             try:
                 print("Attempting to connect...")
                 self.client.port = self.port_var.get()
-                if self.client.connect():
+                if self.client.connect():  # This already includes the test_connection
                     print("Connection successful!")
                     self.connected = True
                     self.connect_btn['text'] = "Disconnect"
@@ -136,12 +145,12 @@ class LEDGUI:
                     self.mode_btn['state'] = 'normal'
                     self.port_dropdown['state'] = 'disabled'
                     
-                    # Get and update mode
-                    connected, mode = self.client.test_connection()
-                    self.update_status(connected=True, mode=mode)
+                    # Get current mode from client's last test_connection result
+                    self.update_status(connected=True, mode=self.client.last_mode)
                     
                     # Enable LED controls if in LED mode
-                    if mode == "LED":
+                    if self.client.last_mode == "LED":
+                        self.update_strip_dropdown()  # Update strip options
                         self.enable_led_controls()
                     else:
                         self.disable_led_controls()
@@ -233,14 +242,14 @@ class LEDGUI:
         """Enable LED control buttons."""
         for widget in [self.color_btn, self.brightness_btn, self.test_pattern_btn, 
                       self.off_btn, self.brightness_scale, self.r_entry, 
-                      self.g_entry, self.b_entry]:
-            widget['state'] = 'normal'
+                      self.g_entry, self.b_entry, self.strip_dropdown]:
+            widget['state'] = 'normal' if widget != self.strip_dropdown else 'readonly'
 
     def disable_led_controls(self):
         """Disable LED control buttons."""
         for widget in [self.color_btn, self.brightness_btn, self.test_pattern_btn, 
                       self.off_btn, self.brightness_scale, self.r_entry, 
-                      self.g_entry, self.b_entry]:
+                      self.g_entry, self.b_entry, self.strip_dropdown]:
             widget['state'] = 'disabled'
 
     def set_color(self):
@@ -250,7 +259,11 @@ class LEDGUI:
             g = int(self.g_var.get())
             b = int(self.b_var.get())
             
-            response = self.client.set_color(r, g, b)
+            # Convert display name to strip ID
+            strip_name = self.strip_var.get()
+            strip_id = self.strip_name_to_id.get(strip_name, 'ALL')
+            
+            response = self.client.set_strip_color(strip_id, r, g, b)
             print(f"Color command response: {response}")
             
             if "ERROR" in response:
@@ -265,7 +278,13 @@ class LEDGUI:
         """Set LED brightness."""
         try:
             brightness = self.brightness_var.get()
-            response = self.client.set_brightness(brightness)
+            
+            # Convert display name to strip ID
+            strip_name = self.strip_var.get()
+            strip_id = self.strip_name_to_id.get(strip_name, 'ALL')
+            
+            response = self.client.set_strip_brightness(strip_id, str(brightness))
+            print(f"Brightness command response: {response}")
             if "ERROR" in response:
                 print(f"Error setting brightness: {response}")
         except ValueError:
@@ -282,6 +301,31 @@ class LEDGUI:
         response = self.client.turn_off()
         if "ERROR" in response:
             print(f"Error turning off LEDs: {response}")
+
+    def update_strip_dropdown(self):
+        """Update strip dropdown with available strips from config."""
+        if self.client.config:
+            # Create a mapping of display names to strip IDs
+            self.strip_name_to_id = {'All Strips': 'ALL'}
+            for strip in self.client.config['strips']:
+                self.strip_name_to_id[strip['name']] = str(strip['id'])
+            
+            # Update dropdown with display names
+            strip_names = ['All Strips'] + [strip['name'] for strip in self.client.config['strips']]
+            self.strip_dropdown['values'] = strip_names
+            
+            # Set initial value
+            current_id = self.strip_var.get()
+            if current_id == 'ALL':
+                self.strip_var.set('All Strips')
+            else:
+                # Find name for current ID
+                for strip in self.client.config['strips']:
+                    if str(strip['id']) == current_id:
+                        self.strip_var.set(strip['name'])
+                        break
+                else:
+                    self.strip_var.set('All Strips')
 
 def main():
     root = tk.Tk()
