@@ -13,6 +13,8 @@ class LEDClient:
         self.connected = False
         self.config = None
         self.last_mode = None
+        # Track active effects
+        self.active_effects = {}  # Format: {strip_id: {'type': effect_type, 'params': effect_params}}
         
     def get_config(self):
         """Get LED strip configuration from the server."""
@@ -110,6 +112,8 @@ class LEDClient:
         """Safely disconnect from LED server."""
         if self.serial and self.serial.is_open:
             try:
+                # Stop all effects before disconnecting
+                self.stop_effect()
                 self.send_command("EXIT")
                 time.sleep(0.1)
                 self.serial.close()
@@ -117,6 +121,7 @@ class LEDClient:
             except:
                 print("Error during disconnect!")
         self.connected = False
+        self.active_effects.clear()
 
     def set_strip_color(self, strip_id, r, g, b):
         """Set color for specific strip."""
@@ -162,7 +167,9 @@ class LEDClient:
             
             # Send test command and wait for response
             print("Sending test command...")
-            self.serial.write(b"whoami\n")
+            command_bytes = "whoami\n".encode('utf-8')
+            print(f"Raw bytes being sent: {command_bytes!r}")
+            self.serial.write(command_bytes)
             self.serial.flush()
             
             # Wait for response with timeout
@@ -171,27 +178,43 @@ class LEDClient:
             while (time.time() - start_time) < 2:  # 2 second timeout
                 if self.serial.in_waiting:
                     char = self.serial.read().decode('utf-8', errors='ignore')
+                    if char == '\n':
+                        break
                     response += char
+                time.sleep(0.1)  # Add small delay to prevent busy waiting
             
             response = response.strip()
             print(f"Raw response: {response!r}")  # Print raw response for debugging
             
-            # Clean the response by removing control sequences and splitting on newlines
-            cleaned_response = ''.join(c for c in response if c.isprintable() or c.isspace())
-            lines = [line.strip() for line in cleaned_response.split('\n') if line.strip()]
-            print(f"Cleaned lines: {lines}")  # Print cleaned lines for debugging
+            # Check for LED mode
+            if response == "LED":
+                self.last_mode = "LED"
+                return True, "LED"
             
-            # Check each line for our expected responses
-            for line in lines:
-                if line == "LED":
-                    self.last_mode = "LED"
-                    return True, "LED"
-                elif "dan" in line or "root" in line:  # Check for terminal user
-                    self.last_mode = "Terminal"
-                    return True, "Terminal"
+            # If no LED response, try reading more for terminal mode
+            terminal_response = ''
+            start_time = time.time()
+            while (time.time() - start_time) < 1:  # 1 second timeout for additional data
+                if self.serial.in_waiting:
+                    char = self.serial.read().decode('utf-8', errors='ignore')
+                    terminal_response += char
+                time.sleep(0.1)
             
-            self.last_mode = "Unknown"
-            return True, "Unknown"
+            print(f"Additional response: {terminal_response!r}")  # Debug print
+            
+            # Check for terminal mode indicators
+            if "dan" in terminal_response or "root" in terminal_response:
+                self.last_mode = "Terminal"
+                return True, "Terminal"
+            
+            # If we got any response, consider it connected but unknown mode
+            if response or terminal_response:
+                self.last_mode = "Unknown"
+                return True, "Unknown"
+            
+            # No response at all
+            self.last_mode = "Not Responding"
+            return False, "Not Responding"
             
         except Exception as e:
             print(f"Connection test error: {e}")
@@ -361,6 +384,103 @@ class LEDClient:
             return None
             
         return strip.get('group_sets', [])
+
+    def stop_effect(self, strip_id=None):
+        """Stop effects.
+        
+        Args:
+            strip_id: ID of strip to stop effect on, or None to stop all effects
+        """
+        if strip_id is None:
+            # Stop all effects
+            responses = []
+            for strip_id in list(self.active_effects.keys()):
+                response = self.send_command(f"STOP_EFFECT:{strip_id}")
+                if 'OK' in response:
+                    del self.active_effects[strip_id]
+                responses.append(response)
+            # Return success if any strip succeeded
+            if any('OK' in resp for resp in responses):
+                return "OK:EFFECTS_STOPPED"
+            else:
+                return responses[0]  # Return first error if all failed
+        else:
+            # Stop effect on specific strip
+            response = self.send_command(f"STOP_EFFECT:{strip_id}")
+            if 'OK' in response and str(strip_id) in self.active_effects:
+                del self.active_effects[str(strip_id)]
+            return response
+
+    def get_active_effects(self):
+        """Get list of currently active effects.
+        
+        Returns:
+            Dictionary of active effects by strip ID
+        """
+        return self.active_effects.copy()
+
+    def start_rainbow_wave(self, strip_id, wait_ms=20):
+        """Start rainbow wave effect on a strip."""
+        try:
+            if strip_id == 'ALL':
+                # Send command to each strip
+                responses = []
+                for strip in self.config['strips']:
+                    response = self.send_command(f"RAINBOW_WAVE:{strip['id']}:{wait_ms}")
+                    if 'OK' in response:
+                        self.active_effects[str(strip['id'])] = {
+                            'type': 'RAINBOW_WAVE',
+                            'params': {'wait_ms': wait_ms}
+                        }
+                    responses.append(response)
+                # Return success if any strip succeeded
+                if any('OK' in resp for resp in responses):
+                    return "OK:RAINBOW_WAVE_STARTED"
+                else:
+                    return responses[0]  # Return first error if all failed
+            else:
+                if not any(str(s['id']) == str(strip_id) for s in self.config['strips']):
+                    return "ERROR: Invalid strip ID"
+                response = self.send_command(f"RAINBOW_WAVE:{strip_id}:{wait_ms}")
+                if 'OK' in response:
+                    self.active_effects[str(strip_id)] = {
+                        'type': 'RAINBOW_WAVE',
+                        'params': {'wait_ms': wait_ms}
+                    }
+                return response
+        except Exception as e:
+            return f"ERROR: {str(e)}"
+
+    def start_group_rainbow_wave(self, strip_id, grouping_id, wait_ms=20):
+        """Start rainbow wave effect on a group set."""
+        if not any(str(s['id']) == str(strip_id) for s in self.config['strips']):
+            return "ERROR: Invalid strip ID"
+        response = self.send_command(f"GROUP_RAINBOW_WAVE:{strip_id}:{grouping_id}:{wait_ms}")
+        if 'OK' in response:
+            self.active_effects[str(strip_id)] = {
+                'type': 'GROUP_RAINBOW_WAVE',
+                'params': {
+                    'grouping_id': grouping_id,
+                    'wait_ms': wait_ms
+                }
+            }
+        return response
+
+    def start_individual_group_rainbow_wave(self, strip_id, grouping_id, group_id, wait_ms=20):
+        """Start rainbow wave effect on a single group."""
+        if not any(str(s['id']) == str(strip_id) for s in self.config['strips']):
+            return "ERROR: Invalid strip ID"
+        response = self.send_command(f"INDIVIDUAL_GROUP_RAINBOW_WAVE:{strip_id}:{grouping_id}:{group_id}:{wait_ms}")
+        if 'OK' in response:
+            self.active_effects[str(strip_id)] = {
+                'type': 'INDIVIDUAL_GROUP_RAINBOW_WAVE',
+                'params': {
+                    'grouping_id': grouping_id,
+                    'group_id': group_id,
+                    'wait_ms': wait_ms
+                }
+            }
+        return response
 
 def main():
     client = LEDClient()

@@ -1,0 +1,14 @@
+Roadmap/TODO
+X1. make LED controller truly dynamic, so everything isn't strip1, strip2
+X2. implement grouping(treating LEDs on the same strip as 1 LED) in pc GUI, with a saveable config for the groups, also implement set GROUP COLOR, so I guess we would send a strip along with an an array of arrays where the nested arrays are the num pixels in strip
+X3. cleanup the double test command when connecting
+4. implement effects, which can but run on entire strips(all LEDs) or groups
+5. create more effects(each effect file can be run on entire strip or a grouping)
+X6. UI for config creation/editing
+7. get rid of dan inside of files
+
+
+
+
+1. integrate battery indicator
+2. efficencies(figure out rgb 565 or 666, etc) 

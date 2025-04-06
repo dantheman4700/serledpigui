@@ -54,6 +54,11 @@ class LEDGUI:
                                  command=self.toggle_mode, state='disabled')
         self.mode_btn.grid(row=0, column=3, padx=5)
         
+        # Add config editor button to control frame
+        self.config_btn = ttk.Button(self.control_frame, text="Edit Config",
+                                    command=self.open_config_editor, state='disabled')
+        self.config_btn.grid(row=0, column=4, padx=5)
+        
         # LED Control Frame
         self.led_frame = ttk.LabelFrame(self.main_frame, text="LED Controls", padding="5")
         self.led_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
@@ -153,6 +158,72 @@ class LEDGUI:
         
         # Disable group controls initially
         self.disable_group_controls()
+        
+        # Effects Frame
+        self.effects_frame = ttk.LabelFrame(self.main_frame, text="Effects", padding="5")
+        self.effects_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        # Animation speed control
+        ttk.Label(self.effects_frame, text="Animation Speed (ms):").grid(row=0, column=0, padx=2)
+        self.animation_speed_var = tk.StringVar(value="20")
+        self.animation_speed_entry = ttk.Entry(self.effects_frame, width=5, textvariable=self.animation_speed_var)
+        self.animation_speed_entry.grid(row=0, column=1, padx=2)
+        
+        # Active Effects Frame
+        self.active_effects_frame = ttk.LabelFrame(self.effects_frame, text="Active Effects", padding="5")
+        self.active_effects_frame.grid(row=0, column=2, rowspan=4, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
+        
+        # Active effects listbox
+        self.active_effects_listbox = tk.Listbox(self.active_effects_frame, height=4, width=40)
+        self.active_effects_listbox.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        
+        # Stop Selected Effect button
+        self.stop_selected_effect_btn = ttk.Button(self.active_effects_frame, text="Stop Selected", 
+                                                 command=self.stop_selected_effect, state='disabled')
+        self.stop_selected_effect_btn.grid(row=1, column=0, padx=2, pady=2)
+        
+        # Stop All Effects button
+        self.stop_all_effects_btn = ttk.Button(self.active_effects_frame, text="Stop All", 
+                                             command=self.stop_all_effects, state='disabled')
+        self.stop_all_effects_btn.grid(row=1, column=1, padx=2, pady=2)
+        
+        # Strip Effects
+        ttk.Label(self.effects_frame, text="Strip Effect:").grid(row=1, column=0, padx=2)
+        self.strip_effect_var = tk.StringVar()
+        self.strip_effect_dropdown = ttk.Combobox(self.effects_frame, textvariable=self.strip_effect_var, 
+                                                state='readonly', width=20)
+        self.strip_effect_dropdown['values'] = ['Rainbow Wave']  # Add more effects here
+        self.strip_effect_dropdown.grid(row=1, column=1, padx=2)
+        self.start_strip_effect_btn = ttk.Button(self.effects_frame, text="Start Strip Effect", 
+                                               command=self.start_strip_effect, state='disabled')
+        self.start_strip_effect_btn.grid(row=1, column=2, padx=5)
+        
+        # Group Set Effects
+        ttk.Label(self.effects_frame, text="Group Set Effect:").grid(row=2, column=0, padx=2)
+        self.group_set_effect_var = tk.StringVar()
+        self.group_set_effect_dropdown = ttk.Combobox(self.effects_frame, textvariable=self.group_set_effect_var, 
+                                                    state='readonly', width=20)
+        self.group_set_effect_dropdown['values'] = ['Rainbow Wave']  # Add more effects here
+        self.group_set_effect_dropdown.grid(row=2, column=1, padx=2)
+        self.start_group_set_effect_btn = ttk.Button(self.effects_frame, text="Start Group Set Effect", 
+                                                   command=self.start_group_set_effect, state='disabled')
+        self.start_group_set_effect_btn.grid(row=2, column=2, padx=5)
+        
+        # Individual Group Effects
+        ttk.Label(self.effects_frame, text="Group Effect:").grid(row=3, column=0, padx=2)
+        self.group_effect_var = tk.StringVar()
+        self.group_effect_dropdown = ttk.Combobox(self.effects_frame, textvariable=self.group_effect_var, 
+                                                state='readonly', width=20)
+        self.group_effect_dropdown['values'] = ['Rainbow Wave']  # Add more effects here
+        self.group_effect_dropdown.grid(row=3, column=1, padx=2)
+        self.start_group_effect_btn = ttk.Button(self.effects_frame, text="Start Group Effect", 
+                                               command=self.start_group_effect, state='disabled')
+        self.start_group_effect_btn.grid(row=3, column=2, padx=5)
+        
+        # Stop Effect button
+        self.stop_effect_btn = ttk.Button(self.effects_frame, text="Stop Effect", 
+                                        command=self.stop_effect, state='disabled')
+        self.stop_effect_btn.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
 
     def refresh_ports(self):
         """Refresh the list of available COM ports."""
@@ -203,6 +274,9 @@ class LEDGUI:
                         self.disable_led_controls()
                         self.disable_group_controls()
                     
+                    # Enable config editor when connected
+                    self.config_btn['state'] = 'normal'
+                    
                 else:
                     print("Connection failed!")
                     self.update_status(connected=False, mode="Not Connected")
@@ -221,6 +295,7 @@ class LEDGUI:
             self.update_status(connected=False, mode="Unknown")
             self.disable_led_controls()
             self.disable_group_controls()
+            self.config_btn['state'] = 'disabled'
 
     def test_connection(self):
         """Test connection and update status."""
@@ -276,9 +351,20 @@ class LEDGUI:
             
             # Enable/disable LED controls based on new mode
             if connected and new_mode == "LED":
-                self.enable_led_controls()
+                # Request config after switching to LED mode
+                if self.client.get_config():
+                    print("Configuration received successfully!")
+                    self.update_strip_dropdown()  # Update strip options
+                    self.enable_led_controls()
+                    self.enable_group_controls()  # Enable group controls too
+                    self.update_grouping_dropdown()  # Initialize grouping options
+                else:
+                    print("Warning: Failed to get LED configuration")
+                    self.disable_led_controls()
+                    self.disable_group_controls()
             else:
                 self.disable_led_controls()
+                self.disable_group_controls()
                 
         except Exception as e:
             print(f"Error toggling mode: {e}")
@@ -291,14 +377,36 @@ class LEDGUI:
         """Enable LED control buttons."""
         for widget in [self.color_btn, self.brightness_btn, self.test_pattern_btn, 
                       self.off_btn, self.brightness_scale, self.r_entry, 
-                      self.g_entry, self.b_entry, self.strip_dropdown]:
-            widget['state'] = 'normal' if widget != self.strip_dropdown else 'readonly'
+                      self.g_entry, self.b_entry, self.strip_dropdown,
+                      self.animation_speed_entry, self.strip_effect_dropdown,
+                      self.group_set_effect_dropdown, self.group_effect_dropdown,
+                      self.start_strip_effect_btn, self.start_group_set_effect_btn,
+                      self.start_group_effect_btn, self.stop_selected_effect_btn,
+                      self.stop_all_effects_btn]:
+            if widget in [self.strip_dropdown, self.strip_effect_dropdown, 
+                        self.group_set_effect_dropdown, self.group_effect_dropdown]:
+                widget['state'] = 'readonly'
+            else:
+                widget['state'] = 'normal'
+            
+            # Set initial values for effect dropdowns
+            if not self.strip_effect_var.get():
+                self.strip_effect_var.set('Rainbow Wave')
+            if not self.group_set_effect_var.get():
+                self.group_set_effect_var.set('Rainbow Wave')
+            if not self.group_effect_var.get():
+                self.group_effect_var.set('Rainbow Wave')
 
     def disable_led_controls(self):
         """Disable LED control buttons."""
         for widget in [self.color_btn, self.brightness_btn, self.test_pattern_btn, 
                       self.off_btn, self.brightness_scale, self.r_entry, 
-                      self.g_entry, self.b_entry, self.strip_dropdown]:
+                      self.g_entry, self.b_entry, self.strip_dropdown,
+                      self.animation_speed_entry, self.strip_effect_dropdown,
+                      self.group_set_effect_dropdown, self.group_effect_dropdown,
+                      self.start_strip_effect_btn, self.start_group_set_effect_btn,
+                      self.start_group_effect_btn, self.stop_selected_effect_btn,
+                      self.stop_all_effects_btn]:
             widget['state'] = 'disabled'
 
     def set_color(self):
@@ -473,9 +581,204 @@ class LEDGUI:
         """Handle strip selection."""
         if self.strip_var.get() == 'All Strips':
             self.disable_group_controls()
+            self.start_group_set_effect_btn['state'] = 'disabled'
+            self.start_group_effect_btn['state'] = 'disabled'
         else:
             self.enable_group_controls()
             self.update_grouping_dropdown()
+            self.start_group_set_effect_btn['state'] = 'normal'
+            self.start_group_effect_btn['state'] = 'normal'
+
+    def open_config_editor(self):
+        """Open the configuration editor window."""
+        from config_manager import ConfigEditorWindow, LEDConfigManager
+        config_manager = LEDConfigManager(self.client)
+        editor = ConfigEditorWindow(self.root, config_manager)
+
+    def start_strip_effect(self):
+        """Start effect on entire strip."""
+        try:
+            strip_name = self.strip_var.get()
+            strip_id = self.strip_name_to_id.get(strip_name, 'ALL')
+            effect = self.strip_effect_var.get()
+            wait_ms = int(self.animation_speed_var.get())
+            
+            if not effect:
+                print("Please select an effect")
+                return
+            
+            if wait_ms <= 0:
+                print("Animation speed must be greater than 0")
+                return
+            
+            if effect == 'Rainbow Wave':
+                response = self.client.start_rainbow_wave(strip_id, wait_ms)
+                print(f"Strip effect response: {response}")
+                if "ERROR" in response:
+                    print(f"Error starting strip effect: {response}")
+                elif "OK" in response:
+                    print("Effect started successfully")
+                    self.update_active_effects_list()
+            else:
+                print(f"Unknown effect: {effect}")
+        except ValueError:
+            print("Invalid animation speed - must be a positive integer")
+        except Exception as e:
+            print(f"Error starting strip effect: {e}")
+
+    def start_group_set_effect(self):
+        """Start effect on group set."""
+        try:
+            strip_name = self.strip_var.get()
+            if strip_name == 'All Strips':
+                print("Please select a specific strip for group effects")
+                return
+                
+            strip_id = self.strip_name_to_id.get(strip_name)
+            grouping_name = self.grouping_var.get()
+            effect = self.group_set_effect_var.get()
+            
+            if not grouping_name:
+                print("Please select a grouping")
+                return
+                
+            # Find grouping ID
+            groups = self.client.get_available_groups(strip_id)
+            grouping = next((g for g in groups if g['name'] == grouping_name), None)
+            if not grouping:
+                print("Selected grouping not found")
+                return
+                
+            wait_ms = int(self.animation_speed_var.get())
+            
+            if effect == 'Rainbow Wave':
+                response = self.client.start_group_rainbow_wave(strip_id, grouping['id'], wait_ms)
+                print(f"Group set effect response: {response}")
+                if "ERROR" in response:
+                    print(f"Error starting group set effect: {response}")
+                elif "OK" in response:
+                    print("Effect started successfully")
+                    self.update_active_effects_list()
+            else:
+                print(f"Unknown effect: {effect}")
+        except ValueError:
+            print("Invalid animation speed - must be a positive integer")
+        except Exception as e:
+            print(f"Error starting group set effect: {e}")
+
+    def start_group_effect(self):
+        """Start effect on individual group."""
+        try:
+            strip_name = self.strip_var.get()
+            if strip_name == 'All Strips':
+                print("Please select a specific strip for group effects")
+                return
+                
+            strip_id = self.strip_name_to_id.get(strip_name)
+            grouping_name = self.grouping_var.get()
+            group_selection = self.group_var.get()
+            effect = self.group_effect_var.get()
+            
+            if not grouping_name or not group_selection:
+                print("Please select a grouping and group")
+                return
+                
+            # Find grouping ID and group ID
+            groups = self.client.get_available_groups(strip_id)
+            grouping = next((g for g in groups if g['name'] == grouping_name), None)
+            if not grouping:
+                print("Selected grouping not found")
+                return
+                
+            group_id = group_selection.split(':')[0]
+            wait_ms = int(self.animation_speed_var.get())
+            
+            if effect == 'Rainbow Wave':
+                response = self.client.start_individual_group_rainbow_wave(
+                    strip_id, grouping['id'], int(group_id), wait_ms)
+                print(f"Individual group effect response: {response}")
+                if "ERROR" in response:
+                    print(f"Error starting individual group effect: {response}")
+                elif "OK" in response:
+                    print("Effect started successfully")
+                    self.update_active_effects_list()
+            else:
+                print(f"Unknown effect: {effect}")
+        except ValueError:
+            print("Invalid animation speed - must be a positive integer")
+        except Exception as e:
+            print(f"Error starting individual group effect: {e}")
+
+    def stop_effect(self):
+        """Stop current effect."""
+        try:
+            response = self.client.stop_effect()
+            print(f"Stop effect command response: {response}")
+            if "ERROR" in response:
+                print(f"Error stopping effect: {response}")
+            else:
+                self.update_active_effects_list()
+        except Exception as e:
+            print(f"Error stopping effect: {e}")
+
+    def update_active_effects_list(self):
+        """Update the active effects listbox."""
+        self.active_effects_listbox.delete(0, tk.END)
+        active_effects = self.client.get_active_effects()
+        
+        if not active_effects:
+            self.active_effects_listbox.insert(tk.END, "No active effects")
+            self.stop_selected_effect_btn['state'] = 'disabled'
+            self.stop_all_effects_btn['state'] = 'disabled'
+            return
+            
+        for strip_id, effect in active_effects.items():
+            # Find strip name
+            strip = next((s for s in self.client.config['strips'] if str(s['id']) == strip_id), None)
+            strip_name = strip['name'] if strip else f"Strip {strip_id}"
+            
+            # Format effect info
+            effect_type = effect['type'].replace('_', ' ').title()
+            params = effect['params']
+            if effect_type == 'Rainbow Wave':
+                effect_str = f"{strip_name}: {effect_type} ({params['wait_ms']}ms)"
+            elif effect_type == 'Group Rainbow Wave':
+                effect_str = f"{strip_name}: {effect_type} - Group Set {params['grouping_id']} ({params['wait_ms']}ms)"
+            elif effect_type == 'Individual Group Rainbow Wave':
+                effect_str = f"{strip_name}: {effect_type} - Group {params['group_id']} ({params['wait_ms']}ms)"
+            else:
+                effect_str = f"{strip_name}: {effect_type}"
+                
+            self.active_effects_listbox.insert(tk.END, effect_str)
+            
+        self.stop_selected_effect_btn['state'] = 'normal'
+        self.stop_all_effects_btn['state'] = 'normal'
+
+    def stop_selected_effect(self):
+        """Stop the selected effect."""
+        selection = self.active_effects_listbox.curselection()
+        if not selection:
+            print("Please select an effect to stop")
+            return
+            
+        active_effects = self.client.get_active_effects()
+        strip_ids = list(active_effects.keys())
+        
+        if selection[0] < len(strip_ids):
+            strip_id = strip_ids[selection[0]]
+            response = self.client.stop_effect(strip_id)
+            print(f"Stop effect response: {response}")
+            if "ERROR" in response:
+                print(f"Error stopping effect: {response}")
+            self.update_active_effects_list()
+
+    def stop_all_effects(self):
+        """Stop all active effects."""
+        response = self.client.stop_effect()
+        print(f"Stop all effects response: {response}")
+        if "ERROR" in response:
+            print(f"Error stopping effects: {response}")
+        self.update_active_effects_list()
 
 def main():
     root = tk.Tk()
