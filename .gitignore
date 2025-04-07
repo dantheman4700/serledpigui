@@ -23,7 +23,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
+/old_code/
+.old_code/
 # IDE
 .idea/
 .vscode/
