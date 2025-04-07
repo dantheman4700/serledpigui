@@ -94,26 +94,26 @@ class LEDGUI:
         # Color button
         self.color_btn = ttk.Button(self.led_frame, text="Set Color", 
                                   command=self.set_color, state='disabled')
-        self.color_btn.grid(row=1, column=6, padx=5)
+        self.color_btn.grid(row=1, column=6, padx=5, pady=5)
         
         # Brightness control
-        ttk.Label(self.led_frame, text="Brightness:").grid(row=2, column=0, columnspan=2, pady=5)
+        ttk.Label(self.led_frame, text="Brightness:").grid(row=2, column=0, pady=5)
         self.brightness_var = tk.IntVar(value=128)
         self.brightness_scale = ttk.Scale(self.led_frame, from_=0, to=255, 
                                         orient=tk.HORIZONTAL, variable=self.brightness_var)
-        self.brightness_scale.grid(row=2, column=2, columnspan=4, sticky=(tk.W, tk.E), pady=5)
+        self.brightness_scale.grid(row=2, column=1, columnspan=5, sticky=(tk.W, tk.E), pady=5, padx=2)
         self.brightness_btn = ttk.Button(self.led_frame, text="Set Brightness", 
                                        command=self.set_brightness, state='disabled')
-        self.brightness_btn.grid(row=2, column=6, pady=5)
+        self.brightness_btn.grid(row=2, column=6, pady=5, padx=5)
         
         # Test and Off buttons
         self.test_pattern_btn = ttk.Button(self.led_frame, text="Test Pattern", 
                                          command=self.test_pattern, state='disabled')
-        self.test_pattern_btn.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
+        self.test_pattern_btn.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky=tk.W)
         
         self.off_btn = ttk.Button(self.led_frame, text="Turn Off", 
                                  command=self.turn_off, state='disabled')
-        self.off_btn.grid(row=3, column=4, columnspan=3, padx=5, pady=5)
+        self.off_btn.grid(row=3, column=3, columnspan=4, padx=5, pady=5, sticky=tk.E)
         
         # Group Control Frame
         self.group_frame = ttk.LabelFrame(self.main_frame, text="Group Controls", padding="5")
@@ -139,22 +139,22 @@ class LEDGUI:
         self.group_g_var = tk.StringVar(value="0")
         self.group_b_var = tk.StringVar(value="0")
         
-        ttk.Label(self.group_frame, text="R:").grid(row=1, column=0, padx=2)
+        ttk.Label(self.group_frame, text="R:").grid(row=1, column=0, padx=2, pady=5)
         self.group_r_entry = ttk.Entry(self.group_frame, width=5, textvariable=self.group_r_var)
-        self.group_r_entry.grid(row=1, column=1, padx=2)
+        self.group_r_entry.grid(row=1, column=1, padx=2, pady=5)
         
-        ttk.Label(self.group_frame, text="G:").grid(row=1, column=2, padx=2)
+        ttk.Label(self.group_frame, text="G:").grid(row=1, column=2, padx=2, pady=5)
         self.group_g_entry = ttk.Entry(self.group_frame, width=5, textvariable=self.group_g_var)
-        self.group_g_entry.grid(row=1, column=3, padx=2)
+        self.group_g_entry.grid(row=1, column=3, padx=2, pady=5)
         
-        ttk.Label(self.group_frame, text="B:").grid(row=1, column=4, padx=2)
+        ttk.Label(self.group_frame, text="B:").grid(row=1, column=4, padx=2, pady=5)
         self.group_b_entry = ttk.Entry(self.group_frame, width=5, textvariable=self.group_b_var)
-        self.group_b_entry.grid(row=1, column=5, padx=2)
+        self.group_b_entry.grid(row=1, column=5, padx=2, pady=5)
         
         # Group color button
         self.group_color_btn = ttk.Button(self.group_frame, text="Set Group Color", 
                                         command=self.set_group_color, state='disabled')
-        self.group_color_btn.grid(row=1, column=6, padx=5)
+        self.group_color_btn.grid(row=1, column=6, padx=5, pady=5)
         
         # Disable group controls initially
         self.disable_group_controls()
@@ -171,21 +171,31 @@ class LEDGUI:
         
         # Active Effects Frame
         self.active_effects_frame = ttk.LabelFrame(self.effects_frame, text="Active Effects", padding="5")
-        self.active_effects_frame.grid(row=0, column=2, rowspan=4, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
+        self.active_effects_frame.grid(row=0, column=2, rowspan=5, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
         
         # Active effects listbox
         self.active_effects_listbox = tk.Listbox(self.active_effects_frame, height=4, width=40)
-        self.active_effects_listbox.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        self.active_effects_listbox.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E))
         
-        # Stop Selected Effect button
-        self.stop_selected_effect_btn = ttk.Button(self.active_effects_frame, text="Stop Selected", 
-                                                 command=self.stop_selected_effect, state='disabled')
-        self.stop_selected_effect_btn.grid(row=1, column=0, padx=2, pady=2)
+        # Start Strip Effect button (moved)
+        self.start_strip_effect_btn = ttk.Button(self.active_effects_frame, text="Start Strip Effect", 
+                                               command=self.start_strip_effect, state='disabled')
+        self.start_strip_effect_btn.grid(row=1, column=0, padx=2, pady=2)
+        
+        # Start Group Set Effect button (moved)
+        self.start_group_set_effect_btn = ttk.Button(self.active_effects_frame, text="Start Group Set Effect", 
+                                                   command=self.start_group_set_effect, state='disabled')
+        self.start_group_set_effect_btn.grid(row=2, column=0, padx=2, pady=2)
+
+        # Start Group Effect button (moved)
+        self.start_group_effect_btn = ttk.Button(self.active_effects_frame, text="Start Group Effect", 
+                                               command=self.start_group_effect, state='disabled')
+        self.start_group_effect_btn.grid(row=3, column=0, padx=2, pady=2)
         
         # Stop All Effects button
         self.stop_all_effects_btn = ttk.Button(self.active_effects_frame, text="Stop All", 
                                              command=self.stop_all_effects, state='disabled')
-        self.stop_all_effects_btn.grid(row=1, column=1, padx=2, pady=2)
+        self.stop_all_effects_btn.grid(row=3, column=1, padx=2, pady=2) # Adjusted column
         
         # Strip Effects
         ttk.Label(self.effects_frame, text="Strip Effect:").grid(row=1, column=0, padx=2)
@@ -194,9 +204,6 @@ class LEDGUI:
                                                 state='readonly', width=20)
         self.strip_effect_dropdown['values'] = ['Rainbow Wave']  # Add more effects here
         self.strip_effect_dropdown.grid(row=1, column=1, padx=2)
-        self.start_strip_effect_btn = ttk.Button(self.effects_frame, text="Start Strip Effect", 
-                                               command=self.start_strip_effect, state='disabled')
-        self.start_strip_effect_btn.grid(row=1, column=2, padx=5)
         
         # Group Set Effects
         ttk.Label(self.effects_frame, text="Group Set Effect:").grid(row=2, column=0, padx=2)
@@ -205,9 +212,6 @@ class LEDGUI:
                                                     state='readonly', width=20)
         self.group_set_effect_dropdown['values'] = ['Rainbow Wave']  # Add more effects here
         self.group_set_effect_dropdown.grid(row=2, column=1, padx=2)
-        self.start_group_set_effect_btn = ttk.Button(self.effects_frame, text="Start Group Set Effect", 
-                                                   command=self.start_group_set_effect, state='disabled')
-        self.start_group_set_effect_btn.grid(row=2, column=2, padx=5)
         
         # Individual Group Effects
         ttk.Label(self.effects_frame, text="Group Effect:").grid(row=3, column=0, padx=2)
@@ -216,14 +220,6 @@ class LEDGUI:
                                                 state='readonly', width=20)
         self.group_effect_dropdown['values'] = ['Rainbow Wave']  # Add more effects here
         self.group_effect_dropdown.grid(row=3, column=1, padx=2)
-        self.start_group_effect_btn = ttk.Button(self.effects_frame, text="Start Group Effect", 
-                                               command=self.start_group_effect, state='disabled')
-        self.start_group_effect_btn.grid(row=3, column=2, padx=5)
-        
-        # Stop Effect button
-        self.stop_effect_btn = ttk.Button(self.effects_frame, text="Stop Effect", 
-                                        command=self.stop_effect, state='disabled')
-        self.stop_effect_btn.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
 
     def refresh_ports(self):
         """Refresh the list of available COM ports."""
@@ -381,8 +377,7 @@ class LEDGUI:
                       self.animation_speed_entry, self.strip_effect_dropdown,
                       self.group_set_effect_dropdown, self.group_effect_dropdown,
                       self.start_strip_effect_btn, self.start_group_set_effect_btn,
-                      self.start_group_effect_btn, self.stop_selected_effect_btn,
-                      self.stop_all_effects_btn]:
+                      self.start_group_effect_btn, self.stop_all_effects_btn]:
             if widget in [self.strip_dropdown, self.strip_effect_dropdown, 
                         self.group_set_effect_dropdown, self.group_effect_dropdown]:
                 widget['state'] = 'readonly'
@@ -405,8 +400,7 @@ class LEDGUI:
                       self.animation_speed_entry, self.strip_effect_dropdown,
                       self.group_set_effect_dropdown, self.group_effect_dropdown,
                       self.start_strip_effect_btn, self.start_group_set_effect_btn,
-                      self.start_group_effect_btn, self.stop_selected_effect_btn,
-                      self.stop_all_effects_btn]:
+                      self.start_group_effect_btn, self.stop_all_effects_btn]:
             widget['state'] = 'disabled'
 
     def set_color(self):
@@ -501,7 +495,6 @@ class LEDGUI:
             else:
                 print(f"No groups found for strip {strip_name}")
                 self.grouping_dropdown['values'] = []
-                self.grouping_var.set('')
                 self.group_dropdown['values'] = []
                 self.group_var.set('')
 
@@ -709,18 +702,6 @@ class LEDGUI:
         except Exception as e:
             print(f"Error starting individual group effect: {e}")
 
-    def stop_effect(self):
-        """Stop current effect."""
-        try:
-            response = self.client.stop_effect()
-            print(f"Stop effect command response: {response}")
-            if "ERROR" in response:
-                print(f"Error stopping effect: {response}")
-            else:
-                self.update_active_effects_list()
-        except Exception as e:
-            print(f"Error stopping effect: {e}")
-
     def update_active_effects_list(self):
         """Update the active effects listbox."""
         self.active_effects_listbox.delete(0, tk.END)
@@ -728,7 +709,6 @@ class LEDGUI:
         
         if not active_effects:
             self.active_effects_listbox.insert(tk.END, "No active effects")
-            self.stop_selected_effect_btn['state'] = 'disabled'
             self.stop_all_effects_btn['state'] = 'disabled'
             return
             
@@ -751,26 +731,7 @@ class LEDGUI:
                 
             self.active_effects_listbox.insert(tk.END, effect_str)
             
-        self.stop_selected_effect_btn['state'] = 'normal'
         self.stop_all_effects_btn['state'] = 'normal'
-
-    def stop_selected_effect(self):
-        """Stop the selected effect."""
-        selection = self.active_effects_listbox.curselection()
-        if not selection:
-            print("Please select an effect to stop")
-            return
-            
-        active_effects = self.client.get_active_effects()
-        strip_ids = list(active_effects.keys())
-        
-        if selection[0] < len(strip_ids):
-            strip_id = strip_ids[selection[0]]
-            response = self.client.stop_effect(strip_id)
-            print(f"Stop effect response: {response}")
-            if "ERROR" in response:
-                print(f"Error stopping effect: {response}")
-            self.update_active_effects_list()
 
     def stop_all_effects(self):
         """Stop all active effects."""
