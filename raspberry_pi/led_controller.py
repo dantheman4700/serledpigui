@@ -2,7 +2,10 @@ import time
 import serial
 import json
 import os
+import threading
 from rpi_ws281x import ws, Color, Adafruit_NeoPixel
+from effects.rainbow_wave import rainbow_wave
+from effects.grouped_rainbow_wave import rainbow_wave_group, rainbow_wave_individual_group
 
 class LEDServer:
     def __init__(self):
@@ -32,6 +35,11 @@ class LEDServer:
         self.serial = None
         self.running = False
         
+        # Add effect tracking
+        self.active_effects = {}  # Format: {strip_id: {'type': str, 'params': dict}}
+        self.effect_thread = None
+        self.effects_running = False
+
     def load_config(self):
         """Load LED configuration from file."""
         try:
@@ -66,6 +74,138 @@ class LEDServer:
         strip.show()
         return True
 
+    def validate_config(self, config):
+        """Validate LED configuration format and values."""
+        try:
+            if not isinstance(config, dict) or 'strips' not in config:
+                return False, "Invalid config format: missing 'strips' key"
+                
+            required_strip_fields = ['id', 'name', 'count', 'pin', 'freq_hz', 'dma', 
+                                   'brightness', 'invert', 'channel', 'type']
+            
+            for strip in config['strips']:
+                # Check all required fields exist
+                missing_fields = [field for field in required_strip_fields if field not in strip]
+                if missing_fields:
+                    return False, f"Strip missing required fields: {missing_fields}"
+                
+                # Validate field types and ranges
+                if not isinstance(strip['count'], int) or strip['count'] <= 0:
+                    return False, "Invalid LED count"
+                if not isinstance(strip['pin'], int):
+                    return False, "Invalid pin number"
+                if not isinstance(strip['brightness'], int) or not 0 <= strip['brightness'] <= 255:
+                    return False, "Invalid brightness value"
+                if not isinstance(strip['channel'], int) or not 0 <= strip['channel'] <= 1:
+                    return False, "Invalid channel number"
+                if not hasattr(ws, strip['type']):
+                    return False, f"Invalid strip type: {strip['type']}"
+                
+            return True, "Config validation successful"
+            
+        except Exception as e:
+            return False, f"Config validation error: {str(e)}"
+
+    def save_config_to_file(self, config):
+        """Save configuration to file."""
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), 'led_config.json')
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=4)
+            return True, "Config saved successfully"
+        except Exception as e:
+            return False, f"Error saving config: {str(e)}"
+
+    def reinitialize_strips(self, new_config):
+        """Reinitialize LED strips with new configuration."""
+        try:
+            # Turn off all current strips
+            for strip in self.strips.values():
+                self.update_strip(strip, color=Color(0, 0, 0))
+            
+            # Clear current strips
+            self.strips.clear()
+            
+            # Initialize new strips
+            for strip_config in new_config['strips']:
+                strip_id = str(strip_config['id'])
+                strip_type = getattr(ws, strip_config['type'])
+                
+                strip = Adafruit_NeoPixel(
+                    strip_config['count'],
+                    strip_config['pin'],
+                    strip_config['freq_hz'],
+                    strip_config['dma'],
+                    strip_config['invert'],
+                    strip_config['brightness'],
+                    strip_config['channel'],
+                    strip_type
+                )
+                strip.begin()
+                self.strips[strip_id] = strip
+                
+            return True, "Strips reinitialized successfully"
+        except Exception as e:
+            return False, f"Error reinitializing strips: {str(e)}"
+
+    def stop_effect(self, strip_id):
+        """Stop effect on a specific strip."""
+        if strip_id in self.active_effects:
+            del self.active_effects[strip_id]
+            # Turn off the strip
+            self.update_strip(self.strips[strip_id], color=Color(0, 0, 0))
+            # If no more effects, stop the effect thread
+            if not self.active_effects:
+                self.effects_running = False
+                if self.effect_thread and self.effect_thread.is_alive():
+                    self.effect_thread.join()
+                    self.effect_thread = None
+
+    def stop_all_effects(self):
+        """Stop all running effects."""
+        self.effects_running = False
+        if self.effect_thread and self.effect_thread.is_alive():
+            self.effect_thread.join()
+            self.effect_thread = None
+        # Turn off all strips that had effects
+        for strip_id in list(self.active_effects.keys()):
+            self.update_strip(self.strips[strip_id], color=Color(0, 0, 0))
+        self.active_effects.clear()
+
+    def run_effects(self):
+        """Main effect loop that handles all active effects."""
+        while self.effects_running and self.active_effects:
+            try:
+                for strip_id, effect in list(self.active_effects.items()):
+                    strip = self.strips[strip_id]
+                    if effect['type'] == 'RAINBOW_WAVE':
+                        rainbow_wave(strip, effect['params']['wait_ms'], iterations=1)
+                    elif effect['type'] == 'GROUP_RAINBOW_WAVE':
+                        rainbow_wave_group(strip, effect['params']['groups'], 
+                                        effect['params']['wait_ms'], iterations=1)
+                    elif effect['type'] == 'INDIVIDUAL_GROUP_RAINBOW_WAVE':
+                        rainbow_wave_individual_group(strip, effect['params']['leds'], 
+                                                   effect['params']['wait_ms'], iterations=1)
+                time.sleep(0.001)  # Small delay between updates
+            except Exception as e:
+                print(f"Error in effect loop: {e}")
+                self.stop_all_effects()
+                break
+
+    def start_effect(self, strip_id, effect_type, params):
+        """Start a new effect."""
+        # Add effect to active effects
+        self.active_effects[strip_id] = {
+            'type': effect_type,
+            'params': params
+        }
+        
+        # Start effect thread if not running
+        if not self.effect_thread or not self.effect_thread.is_alive():
+            self.effects_running = True
+            self.effect_thread = threading.Thread(target=self.run_effects)
+            self.effect_thread.start()
+
     def handle_led_command(self, command, params=None):
         """Handle LED control commands."""
         try:
@@ -74,6 +214,42 @@ class LEDServer:
             
             elif command == "GET_CONFIG":
                 return f"CONFIG:{json.dumps(self.config)}"
+            
+            elif command == "UPDATE_CONFIG":
+                if not params:
+                    return "ERROR:UPDATE_CONFIG_REQUIRES_JSON_DATA"
+                    
+                try:
+                    # Join all parameters back together as they might contain colons
+                    config_json = ':'.join(params)
+                    new_config = json.loads(config_json)
+                    
+                    # Validate config format and values
+                    valid, message = self.validate_config(new_config)
+                    if not valid:
+                        return f"ERROR:{message}"
+                    
+                    # Save config to file
+                    saved, message = self.save_config_to_file(new_config)
+                    if not saved:
+                        return f"ERROR:{message}"
+                    
+                    # Update current config
+                    self.config = new_config
+                    
+                    # Reinitialize strips with new config
+                    success, message = self.reinitialize_strips(new_config)
+                    if not success:
+                        return f"ERROR:{message}"
+                    
+                    return "OK:CONFIG_UPDATED"
+                    
+                except json.JSONDecodeError as e:
+                    print(f"JSON decode error: {e}")  # Debug print
+                    return "ERROR:INVALID_JSON_FORMAT"
+                except Exception as e:
+                    print(f"Update config error: {e}")  # Debug print
+                    return f"ERROR:UPDATE_CONFIG_FAILED:{str(e)}"
             
             elif command == "EXIT":
                 print("Exit command received, shutting down...")
@@ -167,6 +343,113 @@ class LEDServer:
                 except ValueError:
                     return "ERROR:INVALID_PARAMETERS"
                 
+            elif command == "STOP_EFFECT":
+                # Format: STOP_EFFECT:strip_id
+                if not params:
+                    return "ERROR:STOP_EFFECT_REQUIRES_STRIP_ID"
+                strip_id = params[0]
+                if strip_id not in self.strips:
+                    return "ERROR:INVALID_STRIP_ID"
+                self.stop_effect(strip_id)
+                return "OK:EFFECT_STOPPED"
+
+            elif command == "RAINBOW_WAVE":
+                # Format: RAINBOW_WAVE:strip_id:wait_ms
+                if not params or len(params) < 2:
+                    return "ERROR:RAINBOW_WAVE_REQUIRES_STRIP_AND_WAIT_MS"
+                try:
+                    strip_id = params[0]
+                    wait_ms = int(params[1])
+                    
+                    if strip_id not in self.strips:
+                        return "ERROR:INVALID_STRIP_ID"
+                    
+                    # Stop any running effect on this strip
+                    if strip_id in self.active_effects:
+                        self.stop_effect(strip_id)
+                    
+                    # Start new effect
+                    self.start_effect(strip_id, 'RAINBOW_WAVE', {'wait_ms': wait_ms})
+                    return "OK:RAINBOW_WAVE_STARTED"
+                except ValueError:
+                    return "ERROR:INVALID_PARAMETERS"
+
+            elif command == "GROUP_RAINBOW_WAVE":
+                # Format: GROUP_RAINBOW_WAVE:strip_id:grouping_id:wait_ms
+                if not params or len(params) < 3:
+                    return "ERROR:GROUP_RAINBOW_WAVE_REQUIRES_STRIP_GROUPING_AND_WAIT_MS"
+                try:
+                    strip_id = params[0]
+                    grouping_id = int(params[1])
+                    wait_ms = int(params[2])
+                    
+                    if strip_id not in self.strips:
+                        return "ERROR:INVALID_STRIP_ID"
+                    
+                    # Find the grouping in the config
+                    strip_config = next((s for s in self.config['strips'] if str(s['id']) == strip_id), None)
+                    if not strip_config:
+                        return "ERROR:STRIP_NOT_FOUND"
+                        
+                    grouping = next((g for g in strip_config['group_sets'] if g['id'] == grouping_id), None)
+                    if not grouping:
+                        return "ERROR:GROUPING_NOT_FOUND"
+                    
+                    # Extract LED groups
+                    groups = [group['leds'] for group in grouping['groups']]
+                    
+                    # Stop any running effect on this strip
+                    if strip_id in self.active_effects:
+                        self.stop_effect(strip_id)
+                    
+                    # Start new effect
+                    self.start_effect(strip_id, 'GROUP_RAINBOW_WAVE', {
+                        'groups': groups,
+                        'wait_ms': wait_ms
+                    })
+                    return "OK:GROUP_RAINBOW_WAVE_STARTED"
+                except ValueError:
+                    return "ERROR:INVALID_PARAMETERS"
+
+            elif command == "INDIVIDUAL_GROUP_RAINBOW_WAVE":
+                # Format: INDIVIDUAL_GROUP_RAINBOW_WAVE:strip_id:grouping_id:group_id:wait_ms
+                if not params or len(params) < 4:
+                    return "ERROR:INDIVIDUAL_GROUP_RAINBOW_WAVE_REQUIRES_STRIP_GROUPING_GROUP_AND_WAIT_MS"
+                try:
+                    strip_id = params[0]
+                    grouping_id = int(params[1])
+                    group_id = int(params[2])
+                    wait_ms = int(params[3])
+                    
+                    if strip_id not in self.strips:
+                        return "ERROR:INVALID_STRIP_ID"
+                    
+                    # Find the grouping and group in the config
+                    strip_config = next((s for s in self.config['strips'] if str(s['id']) == strip_id), None)
+                    if not strip_config:
+                        return "ERROR:STRIP_NOT_FOUND"
+                        
+                    grouping = next((g for g in strip_config['group_sets'] if g['id'] == grouping_id), None)
+                    if not grouping:
+                        return "ERROR:GROUPING_NOT_FOUND"
+                        
+                    group = next((g for g in grouping['groups'] if g['id'] == group_id), None)
+                    if not group:
+                        return "ERROR:GROUP_NOT_FOUND"
+                    
+                    # Stop any running effect on this strip
+                    if strip_id in self.active_effects:
+                        self.stop_effect(strip_id)
+                    
+                    # Start new effect
+                    self.start_effect(strip_id, 'INDIVIDUAL_GROUP_RAINBOW_WAVE', {
+                        'leds': group['leds'],
+                        'wait_ms': wait_ms
+                    })
+                    return "OK:INDIVIDUAL_GROUP_RAINBOW_WAVE_STARTED"
+                except ValueError:
+                    return "ERROR:INVALID_PARAMETERS"
+                    
             return "ERROR:UNKNOWN_COMMAND"
             
         except Exception as e:
@@ -245,6 +528,8 @@ class LEDServer:
         """Clean shutdown of server."""
         print("\nShutting down LED Server...")
         self.running = False
+        # Stop all effects
+        self.stop_all_effects()
         # Turn off all strips
         for strip in self.strips.values():
             self.update_strip(strip, color=Color(0, 0, 0))

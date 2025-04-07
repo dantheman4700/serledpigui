@@ -1,0 +1,2 @@
+This project enables a user to control addressable LED lights that are hooked up to a pi, on a pc over a serial connection. The pc side code is in ./pc and the pi side is ./raspberry_pi
+The goal of this project is to be able to have modular and finite lighting control system. To achieve this, I have implemented three ways of applying effects the first is applying it to the whole strip. The second is applying it to a group set(basically we treated multiple LEDs as one "a group") The third is applying it to a group on a strip(so just certain pixels) on a strip. 
