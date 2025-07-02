@@ -7,6 +7,14 @@ from rpi_ws281x import ws, Color, Adafruit_NeoPixel
 from effects.rainbow_wave import rainbow_wave
 from effects.grouped_rainbow_wave import rainbow_wave_group, rainbow_wave_individual_group
 
+# Map effect types to functions
+EFFECT_MAP = {
+    'RAINBOW_WAVE': rainbow_wave,
+    'GROUP_RAINBOW_WAVE': rainbow_wave_group,
+    'INDIVIDUAL_GROUP_RAINBOW_WAVE': rainbow_wave_individual_group,
+    # Add other effects here as needed
+}
+
 class LEDServer:
     def __init__(self):
         # Load LED configuration
@@ -17,7 +25,8 @@ class LEDServer:
         for strip_config in self.config['strips']:
             strip_id = str(strip_config['id'])
             # Get strip type from ws module
-            strip_type = getattr(ws, strip_config['type'])
+            strip_type_name = strip_config.get('type', 'SK6812_STRIP_GRBW') # Default to GRBW
+            strip_type = getattr(ws, strip_type_name, ws.SK6812_STRIP_GRBW)
             
             strip = Adafruit_NeoPixel(
                 strip_config['count'],
@@ -29,16 +38,17 @@ class LEDServer:
                 strip_config['channel'],
                 strip_type
             )
+            # Initialize the library (must be called once before other functions).
+            strip.begin()
             self.strips[strip_id] = strip
         
         # Initialize serial connection
         self.serial = None
         self.running = False
         
-        # Add effect tracking
-        self.active_effects = {}  # Format: {strip_id: {'type': str, 'params': dict}}
-        self.effect_thread = None
-        self.effects_running = False
+        # Effect tracking: {strip_id: {'type': str, 'params': dict, 'thread': Thread, 'stop_event': Event}}
+        self.active_effects = {}
+        self._lock = threading.Lock() # Lock for thread-safe access to active_effects
 
     def load_config(self):
         """Load LED configuration from file."""
@@ -60,7 +70,8 @@ class LEDServer:
                 strip.setPixelColor(i, color)
                 
         strip.show()
-        
+        return True
+
     def set_group_color(self, strip, leds, color):
         """Set color for a specific group of LEDs.
         
@@ -119,6 +130,9 @@ class LEDServer:
     def reinitialize_strips(self, new_config):
         """Reinitialize LED strips with new configuration."""
         try:
+            # Stop all running effects before reinitializing
+            self.stop_all_effects()
+
             # Turn off all current strips
             for strip in self.strips.values():
                 self.update_strip(strip, color=Color(0, 0, 0))
@@ -150,61 +164,144 @@ class LEDServer:
 
     def stop_effect(self, strip_id):
         """Stop effect on a specific strip."""
-        if strip_id in self.active_effects:
-            del self.active_effects[strip_id]
-            # Turn off the strip
-            self.update_strip(self.strips[strip_id], color=Color(0, 0, 0))
-            # If no more effects, stop the effect thread
-            if not self.active_effects:
-                self.effects_running = False
-                if self.effect_thread and self.effect_thread.is_alive():
-                    self.effect_thread.join()
-                    self.effect_thread = None
+        with self._lock:
+            if strip_id in self.active_effects:
+                effect_info = self.active_effects.pop(strip_id)
+                stop_event = effect_info.get('stop_event')
+                thread = effect_info.get('thread')
+            else:
+                print(f"No active effect found for strip_id {strip_id} to stop.")
+                return # Exit if no effect found
+
+        if stop_event:
+            stop_event.set() # Signal the thread to stop
+
+        if thread and thread.is_alive():
+            thread.join() # Wait for the thread to finish
+            print(f"Effect thread for strip {strip_id} stopped.")
+
+        # Turn off the strip after the effect has stopped
+        if strip_id in self.strips:
+            print(f"Turning off strip {strip_id} after stopping effect.")
+            strip = self.strips[strip_id]
+            for i in range(strip.numPixels()):
+                strip.setPixelColor(i, Color(0, 0, 0))
+            strip.show()
+        else:
+             print(f"Strip {strip_id} not found for turning off.")
 
     def stop_all_effects(self):
         """Stop all running effects."""
-        self.effects_running = False
-        if self.effect_thread and self.effect_thread.is_alive():
-            self.effect_thread.join()
-            self.effect_thread = None
-        # Turn off all strips that had effects
-        for strip_id in list(self.active_effects.keys()):
-            self.update_strip(self.strips[strip_id], color=Color(0, 0, 0))
-        self.active_effects.clear()
+        print("Stopping all effects...")
+        with self._lock:
+            strip_ids = list(self.active_effects.keys())
+            effects_to_stop = list(self.active_effects.values())
+            self.active_effects.clear() # Clear immediately to prevent new effects starting
 
-    def run_effects(self):
-        """Main effect loop that handles all active effects."""
-        while self.effects_running and self.active_effects:
-            try:
-                for strip_id, effect in list(self.active_effects.items()):
-                    strip = self.strips[strip_id]
-                    if effect['type'] == 'RAINBOW_WAVE':
-                        rainbow_wave(strip, effect['params']['wait_ms'], iterations=1)
-                    elif effect['type'] == 'GROUP_RAINBOW_WAVE':
-                        rainbow_wave_group(strip, effect['params']['groups'], 
-                                        effect['params']['wait_ms'], iterations=1)
-                    elif effect['type'] == 'INDIVIDUAL_GROUP_RAINBOW_WAVE':
-                        rainbow_wave_individual_group(strip, effect['params']['leds'], 
-                                                   effect['params']['wait_ms'], iterations=1)
-                time.sleep(0.001)  # Small delay between updates
-            except Exception as e:
-                print(f"Error in effect loop: {e}")
-                self.stop_all_effects()
-                break
+        stop_events = [info.get('stop_event') for info in effects_to_stop if info.get('stop_event')]
+        threads = [info.get('thread') for info in effects_to_stop if info.get('thread')]
+
+        # Signal all threads to stop
+        for event in stop_events:
+            event.set()
+
+        # Wait for all threads to finish
+        for thread in threads:
+            if thread.is_alive():
+                thread.join()
+
+        print("All effect threads stopped. Turning off strips.")
+        # Turn off all strips that had effects
+        with self._lock: # Use lock although active_effects is cleared, good practice
+             for strip_id in strip_ids:
+                 if strip_id in self.strips:
+                     strip = self.strips[strip_id]
+                     for i in range(strip.numPixels()):
+                         strip.setPixelColor(i, Color(0, 0, 0))
+                     strip.show()
+                 else:
+                    print(f"Strip {strip_id} not found during stop_all_effects cleanup.")
+        print("All effects stopped and strips turned off.")
+
+    def _run_effect_thread(self, strip_id, effect_type, params, stop_event):
+        """Wrapper function to run an effect in a dedicated thread."""
+        if strip_id not in self.strips:
+            print(f"Error: Strip {strip_id} not found for effect {effect_type}.")
+            return
+
+        strip = self.strips[strip_id]
+        effect_func = EFFECT_MAP.get(effect_type)
+
+        if not effect_func:
+            print(f"Error: Unknown effect type '{effect_type}'.")
+            return
+
+        print(f"Starting effect '{effect_type}' on strip {strip_id}.")
+        try:
+            # Prepare arguments for the effect function
+            effect_args = {'strip': strip}
+            # Add parameters specific to the effect type
+            if effect_type == 'RAINBOW_WAVE':
+                effect_args['wait_ms'] = params.get('wait_ms', 20)
+            elif effect_type == 'GROUP_RAINBOW_WAVE':
+                effect_args['group_set'] = params.get('groups', [])
+                effect_args['wait_ms'] = params.get('wait_ms', 20)
+            elif effect_type == 'INDIVIDUAL_GROUP_RAINBOW_WAVE':
+                effect_args['group'] = params.get('leds', [])
+                effect_args['wait_ms'] = params.get('wait_ms', 20)
+            # Add other effect params here
+
+            # Add the stop_event
+            effect_args['stop_event'] = stop_event
+
+            # Call the effect function
+            effect_func(**effect_args)
+
+        except Exception as e:
+            print(f"Error running effect {effect_type} on strip {strip_id}: {e}")
+            # Ensure the strip is turned off if the effect crashes
+            for i in range(strip.numPixels()):
+                strip.setPixelColor(i, Color(0, 0, 0))
+            strip.show()
+        finally:
+            print(f"Effect '{effect_type}' on strip {strip_id} finished.")
+            # Ensure effect is removed from active_effects if thread ends unexpectedly
+            with self._lock:
+                if strip_id in self.active_effects:
+                    # Check if it's the same effect instance before removing
+                    # (Could have been stopped and restarted quickly)
+                    current_info = self.active_effects.get(strip_id)
+                    if current_info and current_info.get('stop_event') == stop_event:
+                         print(f"Cleaning up active_effects entry for strip {strip_id} after thread exit.")
+                         del self.active_effects[strip_id]
 
     def start_effect(self, strip_id, effect_type, params):
-        """Start a new effect."""
-        # Add effect to active effects
-        self.active_effects[strip_id] = {
-            'type': effect_type,
-            'params': params
-        }
-        
-        # Start effect thread if not running
-        if not self.effect_thread or not self.effect_thread.is_alive():
-            self.effects_running = True
-            self.effect_thread = threading.Thread(target=self.run_effects)
-            self.effect_thread.start()
+        """Start a new effect in its own thread."""
+        if strip_id not in self.strips:
+            return f"ERROR:Invalid strip ID {strip_id}"
+        if effect_type not in EFFECT_MAP:
+             return f"ERROR:Unknown effect type {effect_type}"
+
+        # Stop any existing effect on the same strip first
+        self.stop_effect(strip_id)
+
+        stop_event = threading.Event()
+        thread = threading.Thread(
+            target=self._run_effect_thread,
+            args=(strip_id, effect_type, params, stop_event),
+            daemon=True # Allows program to exit even if threads are running
+        )
+
+        with self._lock:
+            self.active_effects[strip_id] = {
+                'type': effect_type,
+                'params': params,
+                'thread': thread,
+                'stop_event': stop_event
+            }
+
+        thread.start()
+        return f"OK:Effect {effect_type} started on strip {strip_id}"
 
     def handle_led_command(self, command, params=None):
         """Handle LED control commands."""
@@ -248,8 +345,8 @@ class LEDServer:
                     print(f"JSON decode error: {e}")  # Debug print
                     return "ERROR:INVALID_JSON_FORMAT"
                 except Exception as e:
-                    print(f"Update config error: {e}")  # Debug print
-                    return f"ERROR:UPDATE_CONFIG_FAILED:{str(e)}"
+                    print(f"Error processing UPDATE_CONFIG: {e}") # Debug print
+                    return f"ERROR:Unexpected error processing config update: {e}"
             
             elif command == "EXIT":
                 print("Exit command received, shutting down...")
@@ -450,6 +547,29 @@ class LEDServer:
                 except ValueError:
                     return "ERROR:INVALID_PARAMETERS"
                     
+            elif command == "START_EFFECT":
+                if not params or len(params) < 2:
+                    return "ERROR:START_EFFECT_REQUIRES_STRIP_ID_AND_EFFECT_TYPE"
+
+                strip_id = params[0]
+                effect_type = params[1]
+                effect_params = {}
+                if len(params) > 2:
+                    try:
+                        # Join remaining params and parse as JSON
+                        params_json = ':'.join(params[2:])
+                        effect_params = json.loads(params_json)
+                    except json.JSONDecodeError:
+                        return "ERROR:INVALID_JSON_FOR_EFFECT_PARAMS"
+                    except Exception as e:
+                         return f"ERROR:Could not parse effect params: {e}"
+
+                return self.start_effect(strip_id, effect_type, effect_params)
+
+            elif command == "STOP_ALL_EFFECTS":
+                 self.stop_all_effects()
+                 return "OK:All effects stopped"
+
             return "ERROR:UNKNOWN_COMMAND"
             
         except Exception as e:

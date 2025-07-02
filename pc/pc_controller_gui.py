@@ -3,6 +3,7 @@ from tkinter import ttk
 import serial.tools.list_ports
 from pc_controller import LEDClient
 import time
+from tkinter import colorchooser
 
 class LEDGUI:
     def __init__(self, root):
@@ -91,10 +92,15 @@ class LEDGUI:
         self.b_entry = ttk.Entry(self.led_frame, width=5, textvariable=self.b_var)
         self.b_entry.grid(row=1, column=5, padx=2)
         
+        # Choose Color button
+        self.choose_color_btn = ttk.Button(self.led_frame, text="Choose Color",
+                                         command=self.open_color_chooser, state='disabled')
+        self.choose_color_btn.grid(row=1, column=6, padx=5, pady=5)
+        
         # Color button
         self.color_btn = ttk.Button(self.led_frame, text="Set Color", 
                                   command=self.set_color, state='disabled')
-        self.color_btn.grid(row=1, column=6, padx=5, pady=5)
+        self.color_btn.grid(row=1, column=7, padx=5, pady=5)
         
         # Brightness control
         ttk.Label(self.led_frame, text="Brightness:").grid(row=2, column=0, pady=5)
@@ -374,6 +380,7 @@ class LEDGUI:
         for widget in [self.color_btn, self.brightness_btn, self.test_pattern_btn, 
                       self.off_btn, self.brightness_scale, self.r_entry, 
                       self.g_entry, self.b_entry, self.strip_dropdown,
+                      self.choose_color_btn,
                       self.animation_speed_entry, self.strip_effect_dropdown,
                       self.group_set_effect_dropdown, self.group_effect_dropdown,
                       self.start_strip_effect_btn, self.start_group_set_effect_btn,
@@ -397,6 +404,7 @@ class LEDGUI:
         for widget in [self.color_btn, self.brightness_btn, self.test_pattern_btn, 
                       self.off_btn, self.brightness_scale, self.r_entry, 
                       self.g_entry, self.b_entry, self.strip_dropdown,
+                      self.choose_color_btn,
                       self.animation_speed_entry, self.strip_effect_dropdown,
                       self.group_set_effect_dropdown, self.group_effect_dropdown,
                       self.start_strip_effect_btn, self.start_group_set_effect_btn,
@@ -740,6 +748,16 @@ class LEDGUI:
         if "ERROR" in response:
             print(f"Error stopping effects: {response}")
         self.update_active_effects_list()
+
+    def open_color_chooser(self):
+        """Open color chooser dialog and update RGB fields."""
+        # Askcolor returns a tuple ((r, g, b), hex_color_string) or (None, None)
+        color_code = colorchooser.askcolor(title="Choose color")
+        if color_code and color_code[0]:  # Check if a color was chosen
+            r, g, b = color_code[0]  # Get the (r, g, b) tuple
+            self.r_var.set(str(int(r)))
+            self.g_var.set(str(int(g)))
+            self.b_var.set(str(int(b)))
 
 def main():
     root = tk.Tk()
