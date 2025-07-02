@@ -91,8 +91,7 @@ class LEDServer:
             if not isinstance(config, dict) or 'strips' not in config:
                 return False, "Invalid config format: missing 'strips' key"
                 
-            required_strip_fields = ['id', 'name', 'count', 'pin', 'freq_hz', 'dma', 
-                                   'brightness', 'invert', 'channel', 'type']
+            required_strip_fields = ['id', 'name', 'count', 'pin', 'freq_hz', 'dma', 'brightness', 'invert', 'channel', 'type']
             
             for strip in config['strips']:
                 # Check all required fields exist
@@ -188,7 +187,7 @@ class LEDServer:
                 strip.setPixelColor(i, Color(0, 0, 0))
             strip.show()
         else:
-             print(f"Strip {strip_id} not found for turning off.")
+            print(f"Strip {strip_id} not found for turning off.")
 
     def stop_all_effects(self):
         """Stop all running effects."""
@@ -213,13 +212,13 @@ class LEDServer:
         print("All effect threads stopped. Turning off strips.")
         # Turn off all strips that had effects
         with self._lock: # Use lock although active_effects is cleared, good practice
-             for strip_id in strip_ids:
-                 if strip_id in self.strips:
-                     strip = self.strips[strip_id]
-                     for i in range(strip.numPixels()):
-                         strip.setPixelColor(i, Color(0, 0, 0))
-                     strip.show()
-                 else:
+            for strip_id in strip_ids:
+                if strip_id in self.strips:
+                    strip = self.strips[strip_id]
+                    for i in range(strip.numPixels()):
+                        strip.setPixelColor(i, Color(0, 0, 0))
+                    strip.show()
+                else:
                     print(f"Strip {strip_id} not found during stop_all_effects cleanup.")
         print("All effects stopped and strips turned off.")
 
@@ -272,15 +271,15 @@ class LEDServer:
                     # (Could have been stopped and restarted quickly)
                     current_info = self.active_effects.get(strip_id)
                     if current_info and current_info.get('stop_event') == stop_event:
-                         print(f"Cleaning up active_effects entry for strip {strip_id} after thread exit.")
-                         del self.active_effects[strip_id]
+                        print(f"Cleaning up active_effects entry for strip {strip_id} after thread exit.")
+                        del self.active_effects[strip_id]
 
     def start_effect(self, strip_id, effect_type, params):
         """Start a new effect in its own thread."""
         if strip_id not in self.strips:
             return f"ERROR:Invalid strip ID {strip_id}"
         if effect_type not in EFFECT_MAP:
-             return f"ERROR:Unknown effect type {effect_type}"
+            return f"ERROR:Unknown effect type {effect_type}"
 
         # Stop any existing effect on the same strip first
         self.stop_effect(strip_id)
@@ -562,13 +561,13 @@ class LEDServer:
                     except json.JSONDecodeError:
                         return "ERROR:INVALID_JSON_FOR_EFFECT_PARAMS"
                     except Exception as e:
-                         return f"ERROR:Could not parse effect params: {e}"
+                        return f"ERROR:Could not parse effect params: {e}"
 
                 return self.start_effect(strip_id, effect_type, effect_params)
 
             elif command == "STOP_ALL_EFFECTS":
-                 self.stop_all_effects()
-                 return "OK:All effects stopped"
+                self.stop_all_effects()
+                return "OK:All effects stopped"
 
             return "ERROR:UNKNOWN_COMMAND"
             

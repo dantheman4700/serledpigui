@@ -42,12 +42,12 @@ def rainbow_wave(strip, stop_event, wait_ms=20):
             step_wait_ms = 10 # Check every 10ms
             total_wait_ms = wait_ms
             while total_wait_ms > 0 and not stop_event.is_set():
-                 sleep_chunk = min(step_wait_ms, total_wait_ms)
-                 time.sleep(sleep_chunk / 1000.0)
-                 total_wait_ms -= sleep_chunk
+                sleep_chunk = min(step_wait_ms, total_wait_ms)
+                time.sleep(sleep_chunk / 1000.0)
+                total_wait_ms -= sleep_chunk
 
             if stop_event.is_set():
-                 break
+                break
 
             # Increment position in color wheel
             j = (j + 1) % 256
